@@ -7,6 +7,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from fetch_cases import fetch_cs2_cases
 import asyncio
+from flask import Flask
+from threading import Thread
 
 # .env dosyasını yükle
 load_dotenv()
@@ -130,6 +132,16 @@ async def check_alarms(application):
                     await application.bot.send_message(chat_id=user_id, text=f"{case_name} ${price:.2f} fiyatına düştü!")
         await asyncio.sleep(600)  # 10 dakika bekle
 
+# Flask uygulaması için bir endpoint ekleyelim
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
 # Uygulama başlatma
 if __name__ == "__main__":
     # .env dosyasından token'ı al
@@ -143,4 +155,10 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_alarm_setup, pattern="^alarm\\|"))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), set_alarm_price))
     app.job_queue.run_once(lambda c: asyncio.create_task(check_alarms(app)), when=0)
+
+    # Flask uygulamasını ayrı bir thread'de başlat
+    thread = Thread(target=run_flask)
+    thread.start()
+
+    # Botu çalıştır
     app.run_polling()
