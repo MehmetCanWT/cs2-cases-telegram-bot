@@ -136,11 +136,8 @@ async def check_alarms(application):
 app = Flask(__name__)
 
 @app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    app.run(host="0.0.0.0", port=5000)
+def hello_world():
+    return 'Hello, World!'
 
 # Uygulama başlatma
 if __name__ == "__main__":
