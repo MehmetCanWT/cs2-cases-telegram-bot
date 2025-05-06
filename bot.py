@@ -136,7 +136,7 @@ async def check_alarms(application):
 app = Flask(__name__)
 
 @app.route('/')
-def hello_world():
+def run_flask():
     return 'Hello, World!'
 
 # Uygulama başlatma
