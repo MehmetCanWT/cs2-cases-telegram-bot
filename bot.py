@@ -10,15 +10,12 @@ import asyncio
 from flask import Flask
 from threading import Thread
 
-# .env dosyasını yükle
 load_dotenv()
 
 ALARM_FILE = "data/alarms.json"
 CASE_LIST_FILE = "data/cases.json"
-
 price_history = {}
 
-# Kasa listesine verileri çek
 def load_case_data():
     try:
         cases = fetch_cs2_cases()
@@ -34,7 +31,6 @@ def load_case_data():
 
 cases = load_case_data()
 
-# Fiyat grafiği oluştur
 def fiyat_grafigi(gecmis_fiyatlar, kasa_adi):
     plt.figure()
     plt.plot(gecmis_fiyatlar, marker='o')
@@ -48,19 +44,16 @@ def fiyat_grafigi(gecmis_fiyatlar, kasa_adi):
     plt.close()
     return path
 
-# Alarm verilerini yükle
 def load_alarms():
     if not os.path.exists(ALARM_FILE):
         return {}
     with open(ALARM_FILE, 'r') as f:
         return json.load(f)
 
-# Alarm verilerini kaydet
 def save_alarms(data):
     with open(ALARM_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
-# Steam fiyatını al
 def get_steam_price(item_name):
     url = f"https://steamcommunity.com/market/priceoverview/?currency=1&appid=730&market_hash_name={item_name.replace(' ', '%20')}"
     response = requests.get(url)
@@ -71,14 +64,12 @@ def get_steam_price(item_name):
             return float(price_str)
     return None
 
-# /start komutu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sorted_cases = sorted(cases)
-    keyboard = [[InlineKeyboardButton(case, callback_data=case)] for case in sorted_cases[:30]]  # İlk 30 kasa
+    keyboard = [[InlineKeyboardButton(case, callback_data=case)] for case in sorted_cases[:30]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("CS2 Kasaları:", reply_markup=reply_markup)
 
-# Seçilen kasa detayları
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -87,17 +78,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if case_name not in price_history:
         price_history[case_name] = []
     price_history[case_name].append(price)
-
     grafik_path = fiyat_grafigi(price_history[case_name], case_name)
-
-    # Alarm kurma tuşu ekle
     keyboard = [[InlineKeyboardButton("Alarm Kur", callback_data=f"alarm|{case_name}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     await context.bot.send_photo(chat_id=query.message.chat_id, photo=open(grafik_path, 'rb'))
     await query.edit_message_text(text=f"{case_name} fiyatı: ${price:.2f}", reply_markup=reply_markup)
 
-# Alarm kurma
 async def handle_alarm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -105,7 +91,6 @@ async def handle_alarm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['selected_case'] = case_name
     await query.message.reply_text(f"{case_name} için kaç dolara düştüğünde uyarı alacaksın?")
 
-# Alarm fiyatı belirleme
 async def set_alarm_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     case_name = context.user_data.get('selected_case')
     if case_name:
@@ -121,7 +106,6 @@ async def set_alarm_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("Lütfen geçerli bir fiyat gir.")
 
-# Alarm kontrolü
 async def check_alarms(application):
     while True:
         alarms = load_alarms()
@@ -130,32 +114,33 @@ async def check_alarms(application):
                 price = get_steam_price(case_name)
                 if price is not None and price <= target_price:
                     await application.bot.send_message(chat_id=user_id, text=f"{case_name} ${price:.2f} fiyatına düştü!")
-        await asyncio.sleep(600)  # 10 dakika bekle
+        await asyncio.sleep(600)
 
-# Flask uygulaması için bir endpoint ekleyelim
-app = Flask(__name__)
+# Flask app for keep-alive
+app_flask = Flask(__name__)
 
-@app.route('/')
+@app_flask.route("/")
+def home():
+    return "Bot çalışıyor!"
+
 def run_flask():
-    return 'Hello, World!'
+    app_flask.run(host="0.0.0.0", port=8080)
 
-# Uygulama başlatma
 if __name__ == "__main__":
-    # .env dosyasından token'ı al
     bot_token = os.getenv("BOT_TOKEN")
     if bot_token is None:
         raise ValueError("BOT_TOKEN çevresel değişkeni .env dosyasından alınamadı.")
 
-    app = ApplicationBuilder().token(bot_token).build()
-    app.add_handler(CommandHandler('start', start))
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(CallbackQueryHandler(handle_alarm_setup, pattern="^alarm\\|"))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), set_alarm_price))
-    app.job_queue.run_once(lambda c: asyncio.create_task(check_alarms(app)), when=0)
+    telegram_app = ApplicationBuilder().token(bot_token).build()
+    telegram_app.add_handler(CommandHandler('start', start))
+    telegram_app.add_handler(CallbackQueryHandler(button))
+    telegram_app.add_handler(CallbackQueryHandler(handle_alarm_setup, pattern="^alarm\\|"))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), set_alarm_price))
 
-    # Flask uygulamasını ayrı bir thread'de başlat
+    telegram_app.job_queue.run_once(lambda c: asyncio.create_task(check_alarms(telegram_app)), when=0)
+
     thread = Thread(target=run_flask)
+    thread.daemon = True
     thread.start()
 
-    # Botu çalıştır
-    app.run_polling()
+    telegram_app.run_polling()
